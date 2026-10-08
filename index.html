@@ -22,8 +22,18 @@ body{font-family:Arial,sans-serif;background:#f5f6f8;margin:0;color:#222}header{
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL="https://xagjgrfoiszczsmncwch.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY="PASTE_NEW_PUBLISHABLE_KEY_HERE";
-const sb=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+// أول مرة فقط: الصقي Publishable key الجديدة في النافذة التي ستظهر، ولن تُرسل إلى ChatGPT.
+let SUPABASE_PUBLISHABLE_KEY = localStorage.getItem("mini_market_supabase_publishable_key") || "";
+if (!SUPABASE_PUBLISHABLE_KEY) {
+  SUPABASE_PUBLISHABLE_KEY = prompt("الصقي هنا Supabase Publishable key الجديدة (تبدأ غالبًا بـ sb_publishable_). لا تستخدمي secret أو service_role key:") || "";
+  if (SUPABASE_PUBLISHABLE_KEY.trim()) localStorage.setItem("mini_market_supabase_publishable_key", SUPABASE_PUBLISHABLE_KEY.trim());
+}
+if (!SUPABASE_PUBLISHABLE_KEY.trim()) {
+  document.getElementById("status").textContent = "مطلوب مفتاح الاتصال";
+  document.getElementById("loginMsg").textContent = "أعيدي فتح الموقع والصقي Publishable key الجديدة عند ظهور النافذة.";
+  throw new Error("Supabase Publishable key is required");
+}
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY.trim());
 let products=[],cart=[];
 async function login(){const{error}=await sb.auth.signInWithPassword({email:email.value,password:password.value});loginMsg.textContent=error?error.message:""}
 async function logout(){await sb.auth.signOut();location.reload()}
