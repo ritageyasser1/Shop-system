@@ -10,7 +10,7 @@ body{font-family:Arial,sans-serif;background:#f5f6f8;margin:0;color:#222}header{
 </head>
 <body>
 <header><b>🛒 Mini Market POS</b><span id="status">غير متصل</span></header>
-<section id="login" class="card"><h2>تسجيل الدخول</h2><input id="email" type="email" placeholder="الإيميل"><input id="password" type="password" placeholder="كلمة المرور"><button onclick="login()">دخول</button><p id="loginMsg"></p></section>
+<section id="login" class="card"><h2 id="authTitle">تسجيل الدخول</h2><div id="loginForm"><label for="email">الإيميل</label><input id="email" type="email" autocomplete="username" placeholder="الإيميل"><label for="password">كلمة المرور</label><input id="password" type="password" autocomplete="current-password" placeholder="كلمة المرور"><button id="loginBtn" onclick="login()">دخول</button><button class="gray" onclick="sendPasswordReset()">نسيت كلمة المرور؟</button></div><div id="resetForm" class="hidden"><p>اكتبي كلمة مرور جديدة</p><label for="newPassword">كلمة المرور الجديدة</label><input id="newPassword" type="password" autocomplete="new-password" placeholder="كلمة المرور الجديدة"><button onclick="saveNewPassword()">حفظ كلمة المرور</button></div><p id="loginMsg" role="status" aria-live="polite"></p></section>
 <main id="app" class="hidden">
 <nav><button onclick="show('dashboard')">الرئيسية</button><button onclick="show('products')">المنتجات</button><button onclick="show('purchase')">شراء / إضافة مخزون</button><button onclick="show('sale')">البيع</button><button onclick="show('reports')">التقارير</button><button class="gray" onclick="logout()">خروج</button></nav>
 <section id="dashboard" class="page card"><h2>الرئيسية</h2><div class="grid"><div class="card">عدد المنتجات<div class="stat" id="sProducts">0</div></div><div class="card">قيمة المخزون<div class="stat" id="sStock">0</div></div><div class="card">منتجات تحتاج شراء<div class="stat" id="sLow">0</div></div></div></section>
@@ -35,7 +35,46 @@ if (!SUPABASE_PUBLISHABLE_KEY.trim()) {
 }
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY.trim());
 let products=[],cart=[];
-async function login(){const{error}=await sb.auth.signInWithPassword({email:email.value,password:password.value});loginMsg.textContent=error?error.message:""}
+const $ = (id) => document.getElementById(id);
+function setAuthMessage(message, isError=true){ $('loginMsg').textContent=message; $('loginMsg').className=isError?'danger':'ok'; }
+async function login(){
+  const userEmail=$('email').value.trim(), userPassword=$('password').value;
+  if(!userEmail || !userPassword){setAuthMessage('اكتبي الإيميل وكلمة المرور أولًا.');return;}
+  $('loginBtn').disabled=true; $('loginBtn').textContent='جارٍ تسجيل الدخول...'; setAuthMessage('');
+  try {
+    const {data,error}=await sb.auth.signInWithPassword({email:userEmail,password:userPassword});
+    if(error) { setAuthMessage(error.message==='Invalid login credentials'?'الإيميل أو كلمة المرور غير صحيحة. استخدمي «نسيت كلمة المرور؟» لو مش متأكدة من كلمة المرور.':error.message); return; }
+    if(data.session) { setAuthMessage('تم تسجيل الدخول بنجاح.',false); await enterApp(); }
+  } catch(e) { setAuthMessage('تعذر الاتصال. تأكدي من الإنترنت وحاولي مرة أخرى.'); }
+  finally { $('loginBtn').disabled=false; $('loginBtn').textContent='دخول'; }
+}
+async function sendPasswordReset(){
+  const userEmail=$('email').value.trim();
+  if(!userEmail){setAuthMessage('اكتبي إيميلك في خانة الإيميل الأول.');$('email').focus();return;}
+  setAuthMessage('جارٍ إرسال رابط الاستعادة...',false);
+  try {
+    const {error}=await sb.auth.resetPasswordForEmail(userEmail,{redirectTo:location.origin+location.pathname});
+    if(error){setAuthMessage('تعذر إرسال الرابط: '+error.message);return;}
+    setAuthMessage('لو الإيميل مسجل، هيوصلك رابط استعادة. افتحيه من نفس الجهاز والمتصفح.',false);
+  } catch(e){setAuthMessage('تعذر الاتصال لإرسال رابط الاستعادة.');}
+}
+async function saveNewPassword(){
+  const newPassword=$('newPassword').value;
+  if(newPassword.length<6){setAuthMessage('اختاري كلمة مرور من 6 أحرف على الأقل.');return;}
+  const {error}=await sb.auth.updateUser({password:newPassword});
+  if(error){setAuthMessage('تعذر تغيير كلمة المرور: '+error.message);return;}
+  $('resetForm').classList.add('hidden');$('loginForm').classList.remove('hidden');$('authTitle').textContent='تم تغيير كلمة المرور';
+  setAuthMessage('تم تغيير كلمة المرور. يمكنك تسجيل الدخول بها الآن.',false);
+  await sb.auth.signOut();
+}
+async function enterApp(){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); await loadProducts(); }
+function handleRecoveryLink(){
+  const params=new URLSearchParams(location.hash.replace(/^#/,'&'));
+  if(params.get('type')==='recovery'){
+    $('authTitle').textContent='تعيين كلمة مرور جديدة';$('loginForm').classList.add('hidden');$('resetForm').classList.remove('hidden');
+    setAuthMessage('اكتبي كلمة مرور جديدة بعد فتح رابط الاستعادة.',false);
+  }
+}
 async function logout(){await sb.auth.signOut();location.reload()}
 function show(id){document.querySelectorAll(".page").forEach(x=>x.classList.add("hidden"));document.getElementById(id).classList.remove("hidden");if(id==="products")renderProducts();if(id==="dashboard")dashboard();if(id==="reports")loadSales()}
 async function loadProducts(){const{data,error}=await sb.from("products").select("*").order("name");if(error){status.textContent="خطأ اتصال";return}products=data||[];status.textContent="متصل ✓";dashboard();renderProducts()}
@@ -49,6 +88,16 @@ function changeQty(id,d){const x=cart.find(a=>a.product.id===id);if(!x)return;x.
 function clearCart(){cart=[];renderCart();saleMsg.textContent=""}
 async function completeSale(){if(!cart.length)return;const total=cart.reduce((a,x)=>a+x.qty*x.product.sell_price,0);const{data:s,error:e}=await sb.from("sales").insert({total,payment_method:"cash"}).select().single();if(e)return saleMsg.textContent=e.message;const{error:e2}=await sb.from("sale_items").insert(cart.map(x=>({sale_id:s.id,product_id:x.product.id,quantity:x.qty,unit_price:x.product.sell_price})));if(e2)return saleMsg.textContent=e2.message;for(const x of cart){await sb.from("products").update({stock:x.product.stock-x.qty}).eq("id",x.product.id);await sb.from("stock_movements").insert({product_id:x.product.id,type:"sale",quantity:-x.qty,unit_cost:x.product.cost_price})}saleMsg.textContent="تم البيع بنجاح ✓";clearCart();await loadProducts()}
 async function loadSales(){const{data}=await sb.from("sales").select("*").order("created_at",{ascending:false}).limit(100);salesRows.innerHTML=(data||[]).map(s=>`<tr><td>${new Date(s.created_at).toLocaleString("ar-EG")}</td><td>${Number(s.total).toFixed(2)}</td><td>${s.payment_method}</td></tr>`).join("")}
-sb.auth.getSession().then(({data})=>{if(data.session){login.classList.add("hidden");app.classList.remove("hidden");loadProducts()}})
+handleRecoveryLink();
+sb.auth.getSession().then(({data,error})=>{
+  if(error){$('status').textContent='خطأ اتصال';setAuthMessage(error.message);return;}
+  if(data.session && !location.hash.includes('type=recovery')) enterApp();
+});
+sb.auth.onAuthStateChange((event, session)=>{
+  if(event==='PASSWORD_RECOVERY'){
+    $('authTitle').textContent='تعيين كلمة مرور جديدة';$('loginForm').classList.add('hidden');$('resetForm').classList.remove('hidden');
+    setAuthMessage('اكتبي كلمة مرور جديدة.',false);
+  } else if(event==='SIGNED_IN' && session){ enterApp(); }
+});
 </script>
 </body></html>
